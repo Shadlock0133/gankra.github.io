@@ -168,7 +168,7 @@ As far as I can tell, Swift is basically what happens when you hypnotize a bunch
 There's also a very long tradition of both Rust and Swift just blatantly pointing at eachother and just going "nice, that's mine now":
 
 * [Rust copies if-let from Swift](https://github.com/rust-lang/rfcs/blob/master/text/0160-if-let.md)
-* [Rust copies guard-let from Swift](https://github.com/rust-lang/rfcs/blob/master/text/2294-if-let-guard.md)
+* [Rust copies let-else from Swift](https://github.com/rust-lang/rfcs/blob/master/text/3137-let-else.md)
 * [Swift copies "impl Trait" types as "some Protocol"](https://github.com/apple/swift-evolution/blob/main/proposals/0244-opaque-result-types.md)
 * [Swift proceeds to make "some Protocol" more like Rust](https://github.com/apple/swift-evolution/blob/main/proposals/0328-structural-opaque-result-types.md)
 
@@ -190,7 +190,7 @@ func compute<C: Collection>(_ values: C = [0, 1, 2])
 
 This code is declaring a `compute(my_values)` function that works on any Collection, but if you don't want to provide the data to operate on it, you can just call `compute` and it will use the default value. But the default value is an array literal, so any Collection that *also* conforms to [ArrayLiteralConvertible](https://swiftdoc.org/v3.0/protocol/arrayliteralconvertible/) can use this. Also [the integer literals are overloadable](https://swiftdoc.org/v3.0/protocol/integerliteralconvertible/) so this is [actually a combinatoric type inferrence nightmare](https://stackoverflow.com/questions/29707622/swift-compiler-error-expression-too-complex-on-a-string-concatenation), but that's just how Swift rolls.
 
-The crux of the issue is that not all Collections conform to ArrayLiteralConvertible, so this default isn't universally applicable. The compiler understandably and conservatively says "no" to this, but, that was only the a brief weakening of the Swift team's hypnotic trance, so this proposal just says "actually yes". The interpretation of this is conceptually simple: if you don't provide this argument, then it's "as if" you explicitly wrote out the default expression, and the compiler infers the code like normal from there.
+The crux of the issue is that not all Collections conform to ArrayLiteralConvertible, so this default isn't universally applicable. The compiler understandably and conservatively says "no" to this, but, that was only a brief weakening of the Swift team's hypnotic trance, so this proposal just says "actually yes". The interpretation of this is conceptually simple: if you don't provide this argument, then it's "as if" you explicitly wrote out the default expression, and the compiler infers the code like normal from there.
 
 They demonstrate this with a "real" example of:
 
@@ -347,7 +347,7 @@ do_thing(with_arg: do_thing__with_arg_default())
 
 I used `&str` here on purpose because lifetimes are a bit of a nasty question, but I think with a hopefully simple answer: the return type of the default argument function is exactly the type of the argument *but with every lifetime replaced with 'static*. This requires the expression to be computable with no context, and because almost everything is covariant, will generally Do The Right Thing.
 
-It will fall over for weird things involving invariance or contravariance and you will just get a compiler error. I think that's simply *fine*. The overwhelming application of this feature will be for things that don't even have lifetimes, like RandomState or Global. String literals and slices are the "big" issue, and 'static works well for those. `self` cannot be used to compute the default, because, oh my god no.
+It will fall over for weird things involving invariance or contravariance and you will just get a compiler error. I think that's simply *fine*. The overwhelming application of this feature will be for things that don't even have lifetimes, like RandomState or Global. String literals and slices are the "big" issue, and 'static works well for those. `self` cannot be used to compute the default, because, oh my god no (you can hack that in for yourself with an Option+match in the function body, but crucially this is simple from the perspective of *the compiler*).
 
 Also, if you're worried about type declaration having arbitrary expressions, we can go for the "salty but simple" solution of forcing the user to write the default function manually and provide a function pointer:
 
@@ -385,7 +385,7 @@ fn _do_thing_defaulted() {
 let my_func1: fn() -> () = _do_thing_defaulted;
 ```
 
-This is an *extremely* boring magical transformation, because it's basically just:
+This is an *extremely* boring magical transformation, because it's basically just this:
 
 ```rust
 let my_func1: fn() -> () = || -> () {
@@ -394,9 +394,9 @@ let my_func1: fn() -> () = || -> () {
 };
 ```
 
-Which I believe actually works and compiles today.
+Which I believe actually works and compiles today, and can be done syntactically. (caveat: method lookup is type-directed, so I don't know if this actually smashes a really fundamental hole through like, compiler layering. However this is much less of a concern for static methods, since you're generally explicitly naming the type?)
 
-(There's deeper corner of this for generics, multiple defaulted args, and traits... we'll be getting to that slowly as we refine the design.)
+(There's deeper corners of this for generics, multiple defaulted args, and traits... we'll be getting to that slowly as we refine the design.)
 
 
 
@@ -570,7 +570,7 @@ I can give you this:
 
 ```rust
 let vec1 = Vec::new();
-let vec2 = Vec::new(in_alloc: MyAlloctor::default());
+let vec2 = Vec::new(in_alloc: MyAllocator::default());
 let vec3 = Vec::new(in_alloc: &my_local_allocator);
 
 let map1 = HashMap::new();
