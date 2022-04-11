@@ -566,10 +566,12 @@ doThing() </code></pre></div>
       <span class="ident">with_hasher</span> <span class="ident">hasher</span>: <span class="ident">S</span> <span class="op">=</span> <span class="ident">hard_default_hasher</span>
       <span class="ident">with_alloc</span> <span class="ident">alloc</span>: <span class="ident">A</span> <span class="op">=</span> <span class="ident">hard_default_alloc</span>
     ) -&gt; <span class="self">Self</span> { ... }
+
     <span class="kw">fn</span> <span class="ident">new2</span>(
       <span class="ident">with_hasher</span> <span class="ident">hasher</span>: <span class="ident">S</span> <span class="op">=</span> <span class="ident">soft_default_hasher</span>
       <span class="ident">with_alloc</span> <span class="ident">alloc</span>: <span class="ident">A</span> <span class="op">=</span> <span class="ident">hard_default_alloc</span>
     ) -&gt; <span class="self">Self</span> { ... }
+    
     <span class="kw">fn</span> <span class="ident">new3</span>(
       <span class="ident">with_hasher</span> <span class="ident">hasher</span>: <span class="ident">S</span> <span class="op">=</span> <span class="ident">soft_default_hasher</span>
       <span class="ident">with_alloc</span> <span class="ident">alloc</span>: <span class="ident">A</span> <span class="op">=</span> <span class="ident">soft_default_alloc</span>

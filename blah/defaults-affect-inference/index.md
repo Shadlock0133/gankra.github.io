@@ -749,10 +749,12 @@ impl <K, V, S: BuildHasher, A: Allocator> HashMap<K, V, S, A> {
       with_hasher hasher: S = hard_default_hasher
       with_alloc alloc: A = hard_default_alloc
     ) -> Self { ... }
+
     fn new2(
       with_hasher hasher: S = soft_default_hasher
       with_alloc alloc: A = hard_default_alloc
     ) -> Self { ... }
+    
     fn new3(
       with_hasher hasher: S = soft_default_hasher
       with_alloc alloc: A = soft_default_alloc
