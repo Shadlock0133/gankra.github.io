@@ -483,11 +483,11 @@ let map1 = || {
 let map2 = HashMap::new(with_hasher: MySeededHasher::new(0));
 ```
 
-Basically the "canonical" signature has the compiler strip away all the defaults and just include all the names, but the compiler records the defaulting functions associated with each function. When *syntactically* you omit an argument (or a coercion site's type requires it), the compiler will look up the appropriate defaulting functions and emit a "reabstraction thunk" (closure). That calls the defaults and passes them in.
+Basically the "canonical" signature has the compiler strip away all the defaults and just include all the names, but the compiler records the defaulting functions associated with each argument. When *syntactically* you omit an argument (or a coercion site's type requires it), the compiler will look up the appropriate defaulting functions and emit a "reabstraction thunk" (closure) that calls the defaults and passes them in.
 
 Under this desugarring, default subsets "obviously" work, because we're applying a transform *purely* based on syntax to "normal" rust code and then typechecking it. Good compiler errors may be a challenge, or maybe it will be fine, not sure!
 
-This handles the "hardcode" usecase, but what about the "default" usecase. We could instead write this:
+This handles the "hardcoded default type" usecase, but what about the "Default trait" usecase? We could instead write this:
 
 ```rust
 // NOTE: now generic over Default!
@@ -500,7 +500,7 @@ impl <K, V, S: BuildHasher> HashMap<K, V, S> {
 let map = HashMap::<MyHasher>::new();
 ```
 
-Now our `new` impl has a defaulting value implementation that is generic, but a more refined generic than `new`'s own signature. The desugarring would actually be completely unaffected:
+Now our `new` impl has a defaulting argument implementation that's generic, but a more refined generic than `new`'s own signature. The desugarring would actually be completely unaffected:
 
 ```rust
 fn default_hasher<S: Default + BuildHasher>() -> S { S::default() }
@@ -533,7 +533,7 @@ fn default_hasher() -> String { String::new() }
 fn new<S: BuildHasher>(with_hasher hasher: S = default_hasher)
 ```
 
-I'm a bit tired so I'm not sure how to express this well, but I believe the compiler should be able to check this using normal type checking machinery. In particular, validating defaults is effectively just checking that the real constructor *could be called from the defaulting function*. So it needs to check that this code is well-formed:
+I'm a bit tired so I'm not sure how to express this well, but I believe the compiler should be able to check this using normal typechecking machinery. In particular, validating defaults is effectively just checking that the real constructor *could be called from the defaulting function*. So it needs to check that this code is well-formed:
 
 ```rust
 // fake_default_hasher has the same bounds as default_hasher 
@@ -550,7 +550,7 @@ fn fake_default_hasher<S: Default>() {
 }
 ```
 
-I... *think* default checking can be done piece-wise? And I *think* this should be "easy" for the compiler to either synthesize or check-without-even-generating-the-definiton? BIG HANDWAVE ON THIS ONE!
+I... *think* default checking can be done piece-wise? And I *think* this should be "easy" for the compiler to either synthesize or check-without-even-generating-the-definition? BIG HANDWAVE ON THIS ONE!
 
 
 
@@ -582,9 +582,9 @@ let map2 = HashMap::new(in_alloc: MyHasher::default());
 let map3 = HashMap::new(with_hasher: MySeededHasher::new(0));
 ```
 
-Basically, I think we still have to hardcode the Type default still, but we can get the combinatorics of everything way more under control, making it way more tolerable to add new defaulted type parameters. In particular, you may have noticed that HashMap doesn't yet have an Allocator parameter. I don't know this for sure, but I bet it's because the combinatorics will *actually* get out of control at that point. Let's see how this approach scales.
+Basically, I think we still have to hardcode the Type default, but we can get the combinatorics of everything way more under control, making it way more tolerable to add new defaulted type parameters. In particular, you may have noticed that HashMap doesn't yet have an Allocator parameter. I don't know this for sure, but I bet it's because the combinatorics will *actually* get out of control at that point. 
 
-We would end up with a HashMap implementation like this:
+Let's see how *this* approach scales. We would end up with a HashMap implementation like this:
 
 ```rust
 struct HashMap<K, V, S=RandomState, A=Global> { ... }
@@ -631,7 +631,7 @@ Note especially "map3" where we are "skipping over" the with_hasher argument. Wi
 
 # Solving Hashers and Allocators: Hacky Version
 
-Ok here's where things start getting hacky just to see what happens. What if we wrap all our defaults args Options?
+Ok here's where things start getting hacky just to see what happens. What if we wrap all our defaulted args in Options?
 
 ```rust
 fn default_hasher() -> Option<RandomState> { ... }

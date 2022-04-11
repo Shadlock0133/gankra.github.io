@@ -364,9 +364,9 @@ doThing() </code></pre></div>
 };
 
 <span class="kw">let</span> <span class="ident">map2</span> <span class="op">=</span> <span class="ident">HashMap::new</span>(<span class="ident">with_hasher</span>: <span class="ident">MySeededHasher::new</span>(<span class="number">0</span>));</code></pre></div>
-<p>Basically the “canonical” signature has the compiler strip away all the defaults and just include all the names, but the compiler records the defaulting functions associated with each function. When <em>syntactically</em> you omit an argument (or a coercion site’s type requires it), the compiler will look up the appropriate defaulting functions and emit a “reabstraction thunk” (closure). That calls the defaults and passes them in.</p>
+<p>Basically the “canonical” signature has the compiler strip away all the defaults and just include all the names, but the compiler records the defaulting functions associated with each argument. When <em>syntactically</em> you omit an argument (or a coercion site’s type requires it), the compiler will look up the appropriate defaulting functions and emit a “reabstraction thunk” (closure) that calls the defaults and passes them in.</p>
 <p>Under this desugarring, default subsets “obviously” work, because we’re applying a transform <em>purely</em> based on syntax to “normal” rust code and then typechecking it. Good compiler errors may be a challenge, or maybe it will be fine, not sure!</p>
-<p>This handles the “hardcode” usecase, but what about the “default” usecase. We could instead write this:</p>
+<p>This handles the “hardcoded default type” usecase, but what about the “Default trait” usecase? We could instead write this:</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// NOTE: now generic over Default!</span>
 <span class="kw">fn</span> <span class="ident">default_hasher</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Default</span> <span class="op">+</span> <span class="ident">BuildHasher</span><span class="op">&gt;</span>() -&gt; <span class="ident">S</span> { <span class="ident">S::default</span>() }
@@ -376,7 +376,7 @@ doThing() </code></pre></div>
 }
 
 <span class="kw">let</span> <span class="ident">map</span> <span class="op">=</span> <span class="ident">HashMap</span>::<span class="op">&lt;</span><span class="ident">MyHasher</span><span class="op">&gt;</span><span class="ident">::new</span>();</code></pre></div>
-<p>Now our <code>new</code> impl has a defaulting value implementation that is generic, but a more refined generic than <code>new</code>’s own signature. The desugarring would actually be completely unaffected:</p>
+<p>Now our <code>new</code> impl has a defaulting argument implementation that’s generic, but a more refined generic than <code>new</code>’s own signature. The desugarring would actually be completely unaffected:</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn</span> <span class="ident">default_hasher</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Default</span> <span class="op">+</span> <span class="ident">BuildHasher</span><span class="op">&gt;</span>() -&gt; <span class="ident">S</span> { <span class="ident">S::default</span>() }
 
@@ -400,7 +400,7 @@ doThing() </code></pre></div>
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Concrete type doesn&#39;t implement BuildHasher</span>
 <span class="kw">fn</span> <span class="ident">default_hasher</span>() -&gt; <span class="ident">String</span> { <span class="ident">String::new</span>() }
 <span class="kw">fn</span> <span class="ident">new</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">BuildHasher</span><span class="op">&gt;</span>(<span class="ident">with_hasher</span> <span class="ident">hasher</span>: <span class="ident">S</span> <span class="op">=</span> <span class="ident">default_hasher</span>)</code></pre></div>
-<p>I’m a bit tired so I’m not sure how to express this well, but I believe the compiler should be able to check this using normal type checking machinery. In particular, validating defaults is effectively just checking that the real constructor <em>could be called from the defaulting function</em>. So it needs to check that this code is well-formed:</p>
+<p>I’m a bit tired so I’m not sure how to express this well, but I believe the compiler should be able to check this using normal typechecking machinery. In particular, validating defaults is effectively just checking that the real constructor <em>could be called from the defaulting function</em>. So it needs to check that this code is well-formed:</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// fake_default_hasher has the same bounds as default_hasher </span>
 <span class="kw">fn</span> <span class="ident">fake_default_hasher</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">Default</span><span class="op">&gt;</span>() { 
@@ -414,7 +414,7 @@ doThing() </code></pre></div>
         <span class="ident">arg2</span>: <span class="macro">todo!</span>()
     )
 }</code></pre></div>
-<p>I… <em>think</em> default checking can be done piece-wise? And I <em>think</em> this should be “easy” for the compiler to either synthesize or check-without-even-generating-the-definiton? BIG HANDWAVE ON THIS ONE!</p>
+<p>I… <em>think</em> default checking can be done piece-wise? And I <em>think</em> this should be “easy” for the compiler to either synthesize or check-without-even-generating-the-definition? BIG HANDWAVE ON THIS ONE!</p>
 <h1 id="solving-hashers-and-allocators-reality-version"><a href="#solving-hashers-and-allocators-reality-version">8 Solving Hashers and Allocators: Reality Version</a></h1>
 <p>I don’t think I can give you everything. The Dream was this:</p>
 
@@ -434,8 +434,8 @@ doThing() </code></pre></div>
 <span class="kw">let</span> <span class="ident">map1</span> <span class="op">=</span> <span class="ident">HashMap::new</span>();
 <span class="kw">let</span> <span class="ident">map2</span> <span class="op">=</span> <span class="ident">HashMap::new</span>(<span class="ident">in_alloc</span>: <span class="ident">MyHasher::default</span>());
 <span class="kw">let</span> <span class="ident">map3</span> <span class="op">=</span> <span class="ident">HashMap::new</span>(<span class="ident">with_hasher</span>: <span class="ident">MySeededHasher::new</span>(<span class="number">0</span>));</code></pre></div>
-<p>Basically, I think we still have to hardcode the Type default still, but we can get the combinatorics of everything way more under control, making it way more tolerable to add new defaulted type parameters. In particular, you may have noticed that HashMap doesn’t yet have an Allocator parameter. I don’t know this for sure, but I bet it’s because the combinatorics will <em>actually</em> get out of control at that point. Let’s see how this approach scales.</p>
-<p>We would end up with a HashMap implementation like this:</p>
+<p>Basically, I think we still have to hardcode the Type default, but we can get the combinatorics of everything way more under control, making it way more tolerable to add new defaulted type parameters. In particular, you may have noticed that HashMap doesn’t yet have an Allocator parameter. I don’t know this for sure, but I bet it’s because the combinatorics will <em>actually</em> get out of control at that point. </p>
+<p>Let’s see how <em>this</em> approach scales. We would end up with a HashMap implementation like this:</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">struct</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span>, <span class="ident">S</span><span class="op">=</span><span class="ident">RandomState</span>, <span class="ident">A</span><span class="op">=</span><span class="ident">Global</span><span class="op">&gt;</span> { ... }
 
@@ -471,7 +471,7 @@ doThing() </code></pre></div>
 <span class="kw">let</span> <span class="ident">map5</span> <span class="op">=</span> <span class="ident">HashMap::with_capacity</span>(<span class="number">10</span>, <span class="ident">in_alloc</span>: <span class="kw-2">&amp;</span><span class="ident">local_allocator</span>);</code></pre></div>
 <p>Note especially “map3” where we are “skipping over” the with_hasher argument. Without named arguments, this is annoying/impossible to express. If it <em>was</em> possible you would have to write something like <code>HashMap::new(_, MyAlloc::new())</code>, which, is going to scale incredibly badly.</p>
 <h1 id="solving-hashers-and-allocators-hacky-version"><a href="#solving-hashers-and-allocators-hacky-version">9 Solving Hashers and Allocators: Hacky Version</a></h1>
-<p>Ok here’s where things start getting hacky just to see what happens. What if we wrap all our defaults args Options?</p>
+<p>Ok here’s where things start getting hacky just to see what happens. What if we wrap all our defaulted args in Options?</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn</span> <span class="ident">default_hasher</span>() -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RandomState</span><span class="op">&gt;</span> { ... }
 
