@@ -216,7 +216,7 @@ func unnamed(_ arg: String) { print(arg) } </code></pre></div>
 <div class="example-wrap"><pre class="language-swift"><code>ditto(arg: &quot;hello&quot;)
 external(withArg: &quot;there&quot;)
 unnamed(&quot;everyone!&quot;)</code></pre></div>
-<p>To summarize: arguments are named by default, and function calls must use that name (it’s even part of the function signature!). <strong>The caller cannot change the order of the named arguments.</strong> If you put <em>two</em> names, then the first is “external” and the second is “internal”. If you put <code>_</code> as the external name, then it’s a purely positional argument.</p>
+<p>To summarize: arguments are named by default, and function calls <strong>must</strong> use that name (it’s even part of the function signature!). <strong>The caller cannot change the order of the named arguments.</strong> If you put <em>two</em> names, then the first is “external” and the second is “internal”. If you put <code>_</code> as the external name, then it’s a purely positional argument.</p>
 <p>These rules are very interesting because they’re… not what you expect coming from a language like Python where (AIUI) named arguments are basically sugar for an unordered Dictionary as far as the caller is concerned.</p>
 <p>Swift is using named arguments to make the callsite <em>clear</em> and <em>natural to read</em>. So for instance this array search API:</p>
 <div class="example-wrap"><pre class="language-swift"><code>func starts&lt;PossiblePrefix&gt;(

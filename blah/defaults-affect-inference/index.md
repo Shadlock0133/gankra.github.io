@@ -253,7 +253,7 @@ external(withArg: "there")
 unnamed("everyone!")
 ```
 
-To summarize: arguments are named by default, and function calls must use that name (it's even part of the function signature!). **The caller cannot change the order of the named arguments.** If you put *two* names, then the first is "external" and the second is "internal". If you put `_` as the external name, then it's a purely positional argument.
+To summarize: arguments are named by default, and function calls **must** use that name (it's even part of the function signature!). **The caller cannot change the order of the named arguments.** If you put *two* names, then the first is "external" and the second is "internal". If you put `_` as the external name, then it's a purely positional argument.
 
 These rules are very interesting because they're... not what you expect coming from a language like Python where (AIUI) named arguments are basically sugar for an unordered Dictionary as far as the caller is concerned.
 
