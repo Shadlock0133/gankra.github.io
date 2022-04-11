@@ -160,8 +160,9 @@ But I have been on a kick of solving problems that I can't understand with [solu
 
 So if you ever talk to me about programming language design, this conversation will happen a lot:
 
-You: "Wouldn't it be cool if a language had \<wild feature\>"
-Me: "[Oh yeah Swift did that.](https://gankra.github.io/blah/swift-abi/)"
+> You: "Wouldn't it be cool if a language had \<wild feature\>"
+>
+> Me: "[Oh yeah Swift did that.](https://gankra.github.io/blah/swift-abi/)"
 
 As far as I can tell, Swift is basically what happens when you hypnotize a bunch of compiler developers to simply believe that whatever you say "should" work *does* work, and then they start walking through walls until it *really does*.
 
