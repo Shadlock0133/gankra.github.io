@@ -150,7 +150,7 @@ So! Slamdunk feature, makes perfect sense, compiler already does this trick. Pre
 
 Well, as it turns out, [it's a more complicated feature than it sounded](https://github.com/rust-lang/rust/issues/27336). First there was some concern over how exactly it should [interact with i32 fallback](https://internals.rust-lang.org/t/interaction-of-user-defined-and-integral-fallbacks-with-inference/2496) but that one seemed... fairly negligible. No one wanted to default integer types for Hashers or Allocators, and those were the important things! But as time went on the compiler folks found more [hairy questions](https://github.com/rust-lang/rust/issues/27336#issuecomment-229988042) and things just got too nasty and... well the feature fell into limbo. In 2020 everyone just said let's stop pretending we're gonna crack this and [the tracking issue for the RFC was simply closed](https://github.com/rust-lang/rust/issues/27336#issuecomment-662951104).
 
-I'll be honest, I don't really "get" all the problems. It seems to be a mix of genuinely tricky corner cases mixed with fundamental limitations in the current inference engine (which has been descripted to me as "basically [bidirectional typechecking](https://ncatlab.org/nlab/show/bidirectional+typechecking) but with some hacky subtyping-plus-[Hindley-Miln](http://dev.stephendiehl.com/fun/006_hindley_milner.html)-ish thing grafted on").
+I'll be honest, I don't really "get" all the problems. It seems to be a mix of genuinely tricky corner cases mixed with fundamental limitations in the current inference engine (which has been described to me as "basically [bidirectional typechecking](https://ncatlab.org/nlab/show/bidirectional+typechecking) but with some hacky subtyping-plus-[Hindley-Miln](http://dev.stephendiehl.com/fun/006_hindley_milner.html)-ish thing grafted on").
 
 But I have been on a kick of solving problems that I can't understand with [solutions that are obviously correct](https://gankra.github.io/blah/tower-of-weakenings/), so I don't *need* to understand the problem if I can make something simpler that seemingly "has to work". Let's try!
 
@@ -288,13 +288,13 @@ external(withArg: "there")
 unnamed("everyone!")
 ```
 
-Basically, you just always have to use external args. If you want you could make `ditto` be `_ arg`, you can, but is an amazing nightmare because it would mean Rust and Swift have the exact same syntax and support the exact same things *but the mapping from syntax to behaviour is perfectly shuffled and never the same*. This is pure chaos and I respect it entirely.
+Basically, you just always have to use external args. If you want to make `ditto` be `_ arg`, you can, but that is an amazing nightmare because it would mean Rust and Swift have the exact same syntax and support the exact same things *but the mapping from syntax to behaviour is perfectly shuffled and never the same*. This is pure chaos and I respect it entirely.
 
 Proponents of "Rust should totally have arbitrary subexpression type ascription" will be sad that I'm "burning" the `:` here but:
 
 * It's 2022 and it still hasn't happened, get over it
-* This is already rust's syntax for initializing records, so it's just Consistent.
-* Named arguments are way higher impact than defaults
+* This is already rust's syntax for initializing records, so it's just Consistent
+* Named arguments are way higher impact than type ascription
 
 I am perfectly happy to accept all the following restrictions Swift applies, but I concede that they're fair game for bikeshedding because we are adding this stuff to an existing language:
 
@@ -302,7 +302,11 @@ I am perfectly happy to accept all the following restrictions Swift applies, but
 2. Named arguments must be passed using the name (can't be positional too)
 3. Argument names are part of the function signature (for function pointers and the like)
 
-Restriction 1 is just Opinionated but does help ensure a "flow" to the args, and is mildly necessary to make function signatures coherent. Restriction 2 is a bit messy because it basically means no one gets to "phase in" named arguments to existing code. I expect this one will get dropped, but I think it's back-compat to "undo". Restriction 3 is similar to 2, although might get dropped even more aggressively because it would fuck with function type syntax (Swift lets you give tuples named fields so this is slightly easier to rationalize but that in itself is a huge tarpit that led to tons of wild problems).
+Restriction 1 is just Opinionated but does help ensure a "flow" to the args, and is mildly necessary to make function signatures coherent. 
+
+Restriction 2 is a bit messy because it basically means no one gets to "phase in" named arguments for existing code. I expect this one will get dropped, but I think it's back-compat to just have the restriction and drop it *later*. 
+
+Restriction 3 is similar to 2, although might get dropped even more aggressively because it would fuck with function type syntax (Swift lets you give tuples named fields so this is slightly easier to rationalize but that in itself is a huge tarpit that has led to tons of weird problems). For the sake of not worrying about it, I will be dropping this restriction for the rest of the article.
 
 
 
@@ -336,7 +340,7 @@ fn do_thing(with_arg arg: &str = "hello")
 do_thing()
 ```
 
-Full desugarring, we get:
+If we desugar this a bit we get:
 
 ```rust
 fn do_thing__with_arg_default() -> &'static str { "hello" }
@@ -347,7 +351,7 @@ do_thing(with_arg: do_thing__with_arg_default())
 
 I used `&str` here on purpose because lifetimes are a bit of a nasty question, but I think with a hopefully simple answer: the return type of the default argument function is exactly the type of the argument *but with every lifetime replaced with 'static*. This requires the expression to be computable with no context, and because almost everything is covariant, will generally Do The Right Thing.
 
-It will fall over for weird things involving invariance or contravariance and you will just get a compiler error. I think that's simply *fine*. The overwhelming application of this feature will be for things that don't even have lifetimes, like RandomState or Global. String literals and slices are the "big" issue, and 'static works well for those. `self` cannot be used to compute the default, because, oh my god no (you can hack that in for yourself with an Option+match in the function body, but crucially this is simple from the perspective of *the compiler*).
+It will fall over for weird things involving invariance or contravariance and you will just get a compiler error. I think that's simply *fine*. The overwhelming application of this feature will be for things that don't even have lifetimes, like RandomState or Global. String literals and slices are the "big" issue, and 'static works well for those. `self` cannot be used to compute the default, because, oh my god no (you can hack that in for yourself with an Option+match in the function body, but crucially things remain simple from the perspective of *the compiler*).
 
 Also, if you're worried about type declaration having arbitrary expressions, we can go for the "salty but simple" solution of forcing the user to write the default function manually and provide a function pointer:
 
@@ -361,7 +365,7 @@ do_thing()
 
 That makes the entire syntax as boring as it can get, and basically answers all the hard syntactical problems with "well it's all normal rust code you write". It's just a question of if the minimal syntax is *at all* viable. And the minimal syntax is purely a bikesheddable detail, so, presumably there exists *some* valid syntax for this!
 
-The nastiest question as far as I'm concerned is *what is the actual signature of do_thing*. Ignoring "names in singatures", is it `fn() -> ()` or `for<'a> fn(&'a str) -> ()`? I would like to propose that the answer can be *both*. In particular, you should be allowed to do this:
+The nastiest question as far as I'm concerned is *what is the actual signature of do_thing*. Ignoring "names in signatures", is it `fn() -> ()` or `for<'a> fn(&'a str) -> ()`? I would like to propose that the answer can be *both*. In particular, you should be allowed to do this:
 
 
 ```rust

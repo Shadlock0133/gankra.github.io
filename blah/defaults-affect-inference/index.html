@@ -152,7 +152,7 @@
 <p>The precedent is simple: the compiler <em>already does this</em> for integer literals! If absolutely nothing at all implies what type an integer literal should have, <a href="https://github.com/rust-lang/rfcs/blob/master/text/0212-restore-int-fallback.md">it just picks i32</a> to make the code work. If this sounds Completely Fucking Terrifying… it’s actually pretty rare in practice. In “real” code there’s almost always something like array indexing or your inputs/outputs that implies everything should have some particular type (Rust doesn’t do integer promotion and doesn’t like mixed-with operations). This feature is basically “make unit tests and code examples less annoying”. (Don’t ask about why it’s i32.)</p>
 <p>So! Slamdunk feature, makes perfect sense, compiler already does this trick. Pretty natural for me, a library person, to say “yep that’s happening, wait until it’s shipped”.</p>
 <p>Well, as it turns out, <a href="https://github.com/rust-lang/rust/issues/27336">it’s a more complicated feature than it sounded</a>. First there was some concern over how exactly it should <a href="https://internals.rust-lang.org/t/interaction-of-user-defined-and-integral-fallbacks-with-inference/2496">interact with i32 fallback</a> but that one seemed… fairly negligible. No one wanted to default integer types for Hashers or Allocators, and those were the important things! But as time went on the compiler folks found more <a href="https://github.com/rust-lang/rust/issues/27336#issuecomment-229988042">hairy questions</a> and things just got too nasty and… well the feature fell into limbo. In 2020 everyone just said let’s stop pretending we’re gonna crack this and <a href="https://github.com/rust-lang/rust/issues/27336#issuecomment-662951104">the tracking issue for the RFC was simply closed</a>.</p>
-<p>I’ll be honest, I don’t really “get” all the problems. It seems to be a mix of genuinely tricky corner cases mixed with fundamental limitations in the current inference engine (which has been descripted to me as “basically <a href="https://ncatlab.org/nlab/show/bidirectional+typechecking">bidirectional typechecking</a> but with some hacky subtyping-plus-<a href="http://dev.stephendiehl.com/fun/006_hindley_milner.html">Hindley-Miln</a>-ish thing grafted on”).</p>
+<p>I’ll be honest, I don’t really “get” all the problems. It seems to be a mix of genuinely tricky corner cases mixed with fundamental limitations in the current inference engine (which has been described to me as “basically <a href="https://ncatlab.org/nlab/show/bidirectional+typechecking">bidirectional typechecking</a> but with some hacky subtyping-plus-<a href="http://dev.stephendiehl.com/fun/006_hindley_milner.html">Hindley-Miln</a>-ish thing grafted on”).</p>
 <p>But I have been on a kick of solving problems that I can’t understand with <a href="https://gankra.github.io/blah/tower-of-weakenings/">solutions that are obviously correct</a>, so I don’t <em>need</em> to understand the problem if I can make something simpler that seemingly “has to work”. Let’s try!</p>
 <h1 id="some-wild-shit-swift-does"><a href="#some-wild-shit-swift-does">4 Some Wild Shit Swift Does</a></h1>
 <p>So if you ever talk to me about programming language design, this conversation will happen a lot:</p>
@@ -234,12 +234,12 @@ func unnamed(arg: String) { println!(&quot;{arg}&quot;) }
 ditto(arg: &quot;hello&quot;)
 external(withArg: &quot;there&quot;)
 unnamed(&quot;everyone!&quot;)</code></pre></div>
-<p>Basically, you just always have to use external args. If you want you could make <code>ditto</code> be <code>_ arg</code>, you can, but is an amazing nightmare because it would mean Rust and Swift have the exact same syntax and support the exact same things <em>but the mapping from syntax to behaviour is perfectly shuffled and never the same</em>. This is pure chaos and I respect it entirely.</p>
+<p>Basically, you just always have to use external args. If you want to make <code>ditto</code> be <code>_ arg</code>, you can, but that is an amazing nightmare because it would mean Rust and Swift have the exact same syntax and support the exact same things <em>but the mapping from syntax to behaviour is perfectly shuffled and never the same</em>. This is pure chaos and I respect it entirely.</p>
 <p>Proponents of “Rust should totally have arbitrary subexpression type ascription” will be sad that I’m “burning” the <code>:</code> here but:</p>
 <ul>
 <li>It’s 2022 and it still hasn’t happened, get over it</li>
-<li>This is already rust’s syntax for initializing records, so it’s just Consistent.</li>
-<li>Named arguments are way higher impact than defaults</li>
+<li>This is already rust’s syntax for initializing records, so it’s just Consistent</li>
+<li>Named arguments are way higher impact than type ascription</li>
 </ul>
 <p>I am perfectly happy to accept all the following restrictions Swift applies, but I concede that they’re fair game for bikeshedding because we are adding this stuff to an existing language:</p>
 <ol>
@@ -247,7 +247,9 @@ unnamed(&quot;everyone!&quot;)</code></pre></div>
 <li>Named arguments must be passed using the name (can’t be positional too)</li>
 <li>Argument names are part of the function signature (for function pointers and the like)</li>
 </ol>
-<p>Restriction 1 is just Opinionated but does help ensure a “flow” to the args, and is mildly necessary to make function signatures coherent. Restriction 2 is a bit messy because it basically means no one gets to “phase in” named arguments to existing code. I expect this one will get dropped, but I think it’s back-compat to “undo”. Restriction 3 is similar to 2, although might get dropped even more aggressively because it would fuck with function type syntax (Swift lets you give tuples named fields so this is slightly easier to rationalize but that in itself is a huge tarpit that led to tons of wild problems).</p>
+<p>Restriction 1 is just Opinionated but does help ensure a “flow” to the args, and is mildly necessary to make function signatures coherent. </p>
+<p>Restriction 2 is a bit messy because it basically means no one gets to “phase in” named arguments for existing code. I expect this one will get dropped, but I think it’s back-compat to just have the restriction and drop it <em>later</em>. </p>
+<p>Restriction 3 is similar to 2, although might get dropped even more aggressively because it would fuck with function type syntax (Swift lets you give tuples named fields so this is slightly easier to rationalize but that in itself is a huge tarpit that has led to tons of weird problems). For the sake of not worrying about it, I will be dropping this restriction for the rest of the article.</p>
 <h2 id="optional-arguments"><a href="#optional-arguments">5.2 Optional Arguments</a></h2>
 <p>Ok now the “key” part. Swift lets you declare Optional Arguments with <code>=</code>:</p>
 <div class="example-wrap"><pre class="language-swift"><code>func doThing(withArg arg: String = &quot;hello&quot;)
@@ -266,14 +268,14 @@ doThing() </code></pre></div>
 
 <span class="comment">// sugar for do_thing(with_arg: &quot;hello&quot;)</span>
 <span class="ident">do_thing</span>()</code></pre></div>
-<p>Full desugarring, we get:</p>
+<p>If we desugar this a bit we get:</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn</span> <span class="ident">do_thing__with_arg_default</span>() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">str</span> { <span class="string">&quot;hello&quot;</span> }
 <span class="kw">fn</span> <span class="ident">do_thing</span><span class="op">&lt;</span><span class="lifetime">&#39;a</span><span class="op">&gt;</span>(<span class="ident">with_arg</span> <span class="ident">arg</span>: <span class="kw-2">&amp;</span><span class="lifetime">&#39;a</span> <span class="ident">str</span>);
 
 <span class="ident">do_thing</span>(<span class="ident">with_arg</span>: <span class="ident">do_thing__with_arg_default</span>())</code></pre></div>
 <p>I used <code>&amp;str</code> here on purpose because lifetimes are a bit of a nasty question, but I think with a hopefully simple answer: the return type of the default argument function is exactly the type of the argument <em>but with every lifetime replaced with ’static</em>. This requires the expression to be computable with no context, and because almost everything is covariant, will generally Do The Right Thing.</p>
-<p>It will fall over for weird things involving invariance or contravariance and you will just get a compiler error. I think that’s simply <em>fine</em>. The overwhelming application of this feature will be for things that don’t even have lifetimes, like RandomState or Global. String literals and slices are the “big” issue, and ’static works well for those. <code>self</code> cannot be used to compute the default, because, oh my god no (you can hack that in for yourself with an Option+match in the function body, but crucially this is simple from the perspective of <em>the compiler</em>).</p>
+<p>It will fall over for weird things involving invariance or contravariance and you will just get a compiler error. I think that’s simply <em>fine</em>. The overwhelming application of this feature will be for things that don’t even have lifetimes, like RandomState or Global. String literals and slices are the “big” issue, and ’static works well for those. <code>self</code> cannot be used to compute the default, because, oh my god no (you can hack that in for yourself with an Option+match in the function body, but crucially things remain simple from the perspective of <em>the compiler</em>).</p>
 <p>Also, if you’re worried about type declaration having arbitrary expressions, we can go for the “salty but simple” solution of forcing the user to write the default function manually and provide a function pointer:</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn</span> <span class="ident">my_arg_default</span>() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">str</span> { <span class="string">&quot;hello&quot;</span> }
@@ -282,7 +284,7 @@ doThing() </code></pre></div>
 <span class="comment">// sugar for do_thing(with_arg: my_arg_default())</span>
 <span class="ident">do_thing</span>()</code></pre></div>
 <p>That makes the entire syntax as boring as it can get, and basically answers all the hard syntactical problems with “well it’s all normal rust code you write”. It’s just a question of if the minimal syntax is <em>at all</em> viable. And the minimal syntax is purely a bikesheddable detail, so, presumably there exists <em>some</em> valid syntax for this!</p>
-<p>The nastiest question as far as I’m concerned is <em>what is the actual signature of do_thing</em>. Ignoring “names in singatures”, is it <code>fn() -&gt; ()</code> or <code>for&lt;'a&gt; fn(&amp;'a str) -&gt; ()</code>? I would like to propose that the answer can be <em>both</em>. In particular, you should be allowed to do this:</p>
+<p>The nastiest question as far as I’m concerned is <em>what is the actual signature of do_thing</em>. Ignoring “names in signatures”, is it <code>fn() -&gt; ()</code> or <code>for&lt;'a&gt; fn(&amp;'a str) -&gt; ()</code>? I would like to propose that the answer can be <em>both</em>. In particular, you should be allowed to do this:</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn</span> <span class="ident">my_arg_default</span>() -&gt; <span class="kw-2">&amp;</span><span class="lifetime">&#39;static</span> <span class="ident">str</span> { <span class="string">&quot;hello&quot;</span> }
 <span class="kw">fn</span> <span class="ident">do_thing</span>(<span class="ident">with_arg</span> <span class="ident">arg</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="ident">my_arg_default</span>)
