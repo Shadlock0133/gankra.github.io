@@ -175,21 +175,21 @@ There's also a very long tradition of both Rust and Swift just blatantly pointin
 
 This rules! Languages should absolutely just do this whenever another language clearly nails a problem they're working on. So, if you're working on Swift and want some inspiration, scroll through [Rust's RFCs]() and if you're working on Rust and want some inspiration, scroll through [Swift Evolution](https://github.com/apple/swift-evolution/tree/main/proposals).
 
-I was doing that last night and I came across this Swift Evolution proposal, [SE-0347: Type inference form default expressions](https://github.com/apple/swift-evolution/blob/main/proposals/0347-type-inference-from-default-exprs.md). Sounds pretty fuckin' relevant to my interests!
+I was doing that last night and I came across this Swift Evolution proposal, [SE-0347: Type inference from default expressions](https://github.com/apple/swift-evolution/blob/main/proposals/0347-type-inference-from-default-exprs.md). Sounds pretty fuckin' relevant to my interests!
 
 In this proposal, they're looking at a problem that's like, 3 steps deeper into rad features than Rust is right now. 
 
 * Swift has named function arguments (not used in the following example, but useful later)
 * Swift has optional arguments with defaulted values
-* Swift has overrideable literals (not needed by us, but Fun To Mention)
+* Swift has overloadable literals (not needed by us, but Fun To Mention)
 
-Putting these things together with generics, you can in principle write something like this totally artifical example:
+Putting these things together with generics, you can in principle write something like this totally artificial example:
 
 ```
 func compute<C: Collection>(_ values: C = [0, 1, 2])
 ```
 
-This code is declaring a `compute(my_values)` function that works on any Collection, but if you don't want to provide the data to operate on it, you can just call `compute` and it will use the default value. But the default value is an array literal, so any Collection that *also* conforms to [ArrayLiteralConvertible](https://swiftdoc.org/v3.0/protocol/arrayliteralconvertible/) can use this. Also [the integer literals are overloadable](https://swiftdoc.org/v3.0/protocol/integerliteralconvertible/) so this is [actually a combinatoric type inferrence nightmare](https://stackoverflow.com/questions/29707622/swift-compiler-error-expression-too-complex-on-a-string-concatenation), but that's just how Swift rolls.
+This code is declaring a `compute(my_values)` function that works on any Collection, but if you don't want to provide the data to operate on it, you can just call `compute` and it will use the default value. But the default value is an array literal, so any Collection that *also* conforms to [ArrayLiteralConvertible](https://swiftdoc.org/v3.0/protocol/arrayliteralconvertible/) can use this. Also [the integer literals are overloadable](https://swiftdoc.org/v3.0/protocol/integerliteralconvertible/) so this is [actually a combinatoric type inference nightmare](https://stackoverflow.com/questions/29707622/swift-compiler-error-expression-too-complex-on-a-string-concatenation), but that's just how Swift rolls.
 
 The crux of the issue is that not all Collections conform to ArrayLiteralConvertible, so this default isn't universally applicable. The compiler understandably and conservatively says "no" to this, but, that was only a brief weakening of the Swift team's hypnotic trance, so this proposal just says "actually yes". The interpretation of this is conceptually simple: if you don't provide this argument, then it's "as if" you explicitly wrote out the default expression, and the compiler infers the code like normal from there.
 
@@ -305,7 +305,7 @@ I am perfectly happy to accept all the following restrictions Swift applies, but
 
 Restriction 1 is just Opinionated but does help ensure a "flow" to the args, and is mildly necessary to make function signatures coherent. 
 
-Restriction 2 is a bit messy because it basically means no one gets to "phase in" named arguments for existing code. I expect this one will get dropped, but I think it's back-compat to just have the restriction and drop it *later*. 
+Restriction 2 is a bit messy because it basically means no one gets to "phase in" named arguments for existing code. I expect this one will get dropped, but I think it's backcompat to just have the restriction and drop it *later*. 
 
 Restriction 3 is similar to 2, although might get dropped even more aggressively because it would fuck with function type syntax (Swift lets you give tuples named fields so this is slightly easier to rationalize but that in itself is a huge tarpit that has led to tons of weird problems). For the sake of not worrying about it, I will be dropping this restriction for the rest of the article.
 
