@@ -163,7 +163,7 @@ So if you ever talk to me about programming language design, this conversation w
 You: "Wouldn't it be cool if a language had \<wild feature\>"
 Me: "[Oh yeah Swift did that.](https://gankra.github.io/blah/swift-abi/)"
 
-As far as I can tell, Swift is basically what happens when you hypnotize a bunch of compiler developers to simply believe that what ever you say "should" work *does* work, and then they start walking through walls until it *does*.
+As far as I can tell, Swift is basically what happens when you hypnotize a bunch of compiler developers to simply believe that whatever you say "should" work *does* work, and then they start walking through walls until it *really does*.
 
 There's also a very long tradition of both Rust and Swift just blatantly pointing at eachother and just going "nice, that's mine now":
 
