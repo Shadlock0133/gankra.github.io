@@ -63,11 +63,12 @@
 <li><a href="#named-arguments">5.1 Named Arguments</a><ul></ul></li>
 <li><a href="#optional-arguments">5.2 Optional Arguments</a><ul></ul></li></ul></li>
 <li><a href="#solving-hashers-and-allocators-fantasy-version">6 Solving Hashers and Allocators: Fantasy Version</a><ul></ul></li>
-<li><a href="#subset-defaults">7 Subset Defaults</a><ul></ul></li>
-<li><a href="#solving-hashers-and-allocators-reality-version">8 Solving Hashers and Allocators: Reality Version</a><ul></ul></li>
-<li><a href="#solving-hashers-and-allocators-hacky-version">9 Solving Hashers and Allocators: Hacky Version</a><ul></ul></li>
-<li><a href="#implementing-default-with-optional-args">10 Implementing Default With Optional Args</a><ul></ul></li>
-<li><a href="#conclusion">11 Conclusion</a><ul></ul></li></ul></nav></header>
+<li><a href="#what-i-want-from-a-solution">7 What I Want From A Solution</a><ul></ul></li>
+<li><a href="#subset-defaults">8 Subset Defaults</a><ul></ul></li>
+<li><a href="#solving-hashers-and-allocators-reality-version">9 Solving Hashers and Allocators: Reality Version</a><ul></ul></li>
+<li><a href="#solving-hashers-and-allocators-hacky-version">10 Solving Hashers and Allocators: Hacky Version</a><ul></ul></li>
+<li><a href="#implementing-default-with-optional-args">11 Implementing Default With Optional Args</a><ul></ul></li>
+<li><a href="#conclusion">12 Conclusion</a><ul></ul></li></ul></nav></header>
 <p>Have you ever noticed that some of the bounds on Rust’s collection types are weird? This is a very long and old story of a problem from before even 1.0. I will explain this problem, and then try to solve it in a new way. I will fail to do so, but in the process develop out a lot of interesting concepts, and maybe someone a little smarter than me can find the “missing piece” to perfectly solve the problem.</p>
 <h1 id="default-type-parameters"><a href="#default-type-parameters">1 Default Type Parameters</a></h1>
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span>, <span class="ident">S</span> <span class="op">=</span> <span class="ident">RandomState</span><span class="op">&gt;</span>;
@@ -325,11 +326,11 @@ doThing() </code></pre></div>
 <p>And now you can do this:</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let</span> <span class="ident">vec1</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
-<span class="kw">let</span> <span class="ident">vec2</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="op">&lt;</span><span class="ident">MyAllocator</span><span class="op">&gt;</span><span class="ident">::new</span>();
+<span class="kw">let</span> <span class="ident">vec2</span> <span class="op">=</span> <span class="ident">Vec</span>::<span class="op">&lt;</span><span class="kw">_</span>, <span class="ident">MyAllocator</span><span class="op">&gt;</span><span class="ident">::new</span>();
 <span class="kw">let</span> <span class="ident">vec3</span> <span class="op">=</span> <span class="ident">Vec::new</span>(<span class="ident">in_alloc</span>: <span class="kw-2">&amp;</span><span class="ident">my_local_allocator</span>);
 
 <span class="kw">let</span> <span class="ident">map1</span> <span class="op">=</span> <span class="ident">HashMap::new</span>();
-<span class="kw">let</span> <span class="ident">map2</span> <span class="op">=</span> <span class="ident">HashMap</span>::<span class="op">&lt;</span><span class="ident">MyHasher</span><span class="op">&gt;</span><span class="ident">::new</span>();
+<span class="kw">let</span> <span class="ident">map2</span> <span class="op">=</span> <span class="ident">HashMap</span>::<span class="op">&lt;</span><span class="kw">_</span>, <span class="kw">_</span>, <span class="ident">MyHasher</span><span class="op">&gt;</span><span class="ident">::new</span>();
 <span class="kw">let</span> <span class="ident">map3</span> <span class="op">=</span> <span class="ident">HashMap::new</span>(<span class="ident">with_hasher</span>: <span class="ident">MySeededHasher::new</span>(<span class="number">0</span>));</code></pre></div>
 <p>Wow! Perfect! Incredible! Complete Bullshit That Doesn’t Work!</p>
 <p>I’ve skipped two things:</p>
@@ -337,8 +338,26 @@ doThing() </code></pre></div>
 <li>I didn’t introduce the feature the Swift proposal was <em>actually</em> about, which was allowing optional argument expressions to not cover all possible types for the argument.</li>
 <li>I made the defaults hardcode the default type parameter, but then just magically assumed <code>Vec::&lt;MyAllocator&gt;::new()</code> would work, which is nonsense.</li>
 </ul>
-<p>We’re going to need to think a bit harder to make this work!</p>
-<h1 id="subset-defaults"><a href="#subset-defaults">7 Subset Defaults</a></h1>
+<p>We’re going to need to think a bit harder to make this work! </p>
+<h1 id="what-i-want-from-a-solution"><a href="#what-i-want-from-a-solution">7 What I Want From A Solution</a></h1>
+<p>The rest of this article will be trying to push closer to achieving this “fantasy”, so just to spell out what I’m looking for:</p>
+<ol>
+<li>
+<p>map1/vec1 is “fully defaulted”, and what happens today. The user doesn’t care about all the customization points of our collections and just gets the Good Defaults. No solution is allowed to break this.</p>
+</li>
+<li>
+<p>map2/vec2 is “implicitly using the Default trait”, and what Defaults Affect Inference was always supposed to unlock. Here we’re using the turbofish to indicate we don’t want the defaulted type parameter, but the more common situation would be someone hardcoding their preferences with <code>type MyMap&lt;K, V&gt; = HashMap&lt;K, V, MyChoice&gt;</code>. In this case we want to unlock <code>MyMap::new()</code> Just Working.</p>
+</li>
+<li>
+<p>map3/vec3 is “fixing combinatorics” and “allowing non-Default impls”. It would be nice if every time we introduce a new defaulted type parameter, we could make manually providing it an option for all the <em>existing</em> constructors. None of this <code>with_capacity_and_hasher_and_allocator</code> business which simply does not scale. Ideally APIs like <code>with_hasher</code> would become “legacy” (not worth deprecating, but morally deprecated).</p>
+</li>
+<li>
+<p>New type parameters should not be locked out of trait implementations. The canonical example of this is Default. HashMap got away with this because its defaulted type parameter was “always” there, and so anyone using HashMap::default has always had to deal with it being a little annoying. Vec doesn’t get to do this because it’s adding its parameter after the fact, and so making Default more generic would make a ton of existing code ambiguous.</p>
+</li>
+</ol>
+<p>If you can solve problems 1 and 2 in one function then you have “solved” Defaults Affect Inference, and presumably have a viable solution for 4 as well. That said I can imagine there are solutions that abuse the <em>concreteness</em> of 1 and 2, and still fall over on 4. Problem 4 is absolutely the final boss of Defaults Affect Inference.</p>
+<p>Problem 3 is orthogonal to Defaults Affect Inference, but is a problem that comes hand-in-hand with the things that DAI is <em>for</em>. As far as I can tell, it can only ever be fixed with defaulted optional arguments <em>or</em> a straight-up builder for your type. While I like builders in general, the ergonomics isn’t there for “everyday” types like collections.</p>
+<h1 id="subset-defaults"><a href="#subset-defaults">8 Subset Defaults</a></h1>
 <p>Going back to super-desugarred form, Subset Defaults would allow this code to compile:</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn</span> <span class="ident">default_hasher</span>() -&gt; <span class="ident">RandomState</span> { ... }
@@ -417,7 +436,7 @@ doThing() </code></pre></div>
     )
 }</code></pre></div>
 <p>I… <em>think</em> default checking can be done piece-wise? And I <em>think</em> this should be “easy” for the compiler to either synthesize or check-without-even-generating-the-definition? BIG HANDWAVE ON THIS ONE!</p>
-<h1 id="solving-hashers-and-allocators-reality-version"><a href="#solving-hashers-and-allocators-reality-version">8 Solving Hashers and Allocators: Reality Version</a></h1>
+<h1 id="solving-hashers-and-allocators-reality-version"><a href="#solving-hashers-and-allocators-reality-version">9 Solving Hashers and Allocators: Reality Version</a></h1>
 <p>I don’t think I can give you everything. The Dream was this:</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let</span> <span class="ident">vec1</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
@@ -472,13 +491,13 @@ doThing() </code></pre></div>
 <span class="comment">// And we don&#39;t need 4 new copies of alternative constructors:</span>
 <span class="kw">let</span> <span class="ident">map5</span> <span class="op">=</span> <span class="ident">HashMap::with_capacity</span>(<span class="number">10</span>, <span class="ident">in_alloc</span>: <span class="kw-2">&amp;</span><span class="ident">local_allocator</span>);</code></pre></div>
 <p>Note especially “map3” where we are “skipping over” the with_hasher argument. Without named arguments, this is annoying/impossible to express. If it <em>was</em> possible you would have to write something like <code>HashMap::new(_, MyAlloc::new())</code>, which, is going to scale incredibly badly.</p>
-<h1 id="solving-hashers-and-allocators-hacky-version"><a href="#solving-hashers-and-allocators-hacky-version">9 Solving Hashers and Allocators: Hacky Version</a></h1>
+<h1 id="solving-hashers-and-allocators-hacky-version"><a href="#solving-hashers-and-allocators-hacky-version">10 Solving Hashers and Allocators: Hacky Version</a></h1>
 <p>Ok here’s where things start getting hacky just to see what happens. What if we wrap all our defaulted args in Options?</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn</span> <span class="ident">default_hasher</span>() -&gt; <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">RandomState</span><span class="op">&gt;</span> { ... }
 
 <span class="kw">impl</span> <span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span>, <span class="ident">S</span>: <span class="ident">BuildHasher</span><span class="op">&gt;</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span>, <span class="ident">S</span><span class="op">&gt;</span> {
-    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">with_hasher</span> <span class="ident">hasher</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">S</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">default_hasher</span>) 
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">with_hasher</span> <span class="ident">hasher</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">S</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">default_hasher</span>) -&gt; <span class="self">Self</span> 
         <span class="kw">where</span> <span class="ident">S</span>: <span class="ident">Default</span>,
     {
         <span class="kw">let</span> <span class="ident">hasher</span> <span class="op">=</span> <span class="ident">hasher</span>.<span class="ident">unwrap_or_default</span>();
@@ -489,14 +508,23 @@ doThing() </code></pre></div>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// uses S=RandomState</span>
 <span class="kw">let</span> <span class="ident">map1</span> <span class="op">=</span> <span class="ident">HashMap::new</span>();
-<span class="kw">let</span> <span class="ident">map2</span> <span class="op">=</span> <span class="ident">HashMap</span>::<span class="op">&lt;</span><span class="ident">MyHasher</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">with_hasher</span>: <span class="prelude-val">None</span>);
-<span class="kw">let</span> <span class="ident">map3</span> <span class="op">=</span> <span class="ident">HashMap::new</span>(<span class="ident">with_hasher</span>: <span class="prelude-val">Some</span>(<span class="ident">MySeededHasher::new</span>(<span class="number">0</span>)));</code></pre></div>
+<span class="kw">let</span> <span class="ident">map2</span> <span class="op">=</span> <span class="ident">HashMap</span>::<span class="op">&lt;</span><span class="kw">_</span>, <span class="kw">_</span>, <span class="ident">MyHasher</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">with_hasher</span>: <span class="prelude-val">None</span>);
+<span class="kw">let</span> <span class="ident">map3</span> <span class="op">=</span> <span class="ident">HashMap::new</span>(<span class="ident">with_hasher</span>: <span class="prelude-val">Some</span>(<span class="ident">MySeededHasher::new</span>(<span class="number">0</span>)));
+
+<span class="comment">// OR:</span>
+<span class="kw">let</span> <span class="ident">map2</span> <span class="op">=</span> <span class="ident">HashMap::new</span>(<span class="ident">with_hasher</span>: <span class="prelude-val">None</span>::<span class="op">&lt;</span><span class="ident">MyHasher</span><span class="op">&gt;</span>);</code></pre></div>
 <p>Basically, by adding an Option (or an enum equivalent to Option), the user can explicitly request a “partial application” of the default. In this way we can squeeze all 3 usecases into one function… kind of. The explicit map3 case takes two hits:</p>
 <ul>
 <li>It is now <em>extra</em> explicit</li>
 <li>It must now conform to Default <em>even though we’re explicitly providing it</em></li>
 </ul>
-<p>I don’t know how to do better than this without true changes to the type system. But, hey, it’s there as an option?  Ok actually if you want to get Really Fucking Hacky we could make a MaybeDefault trait that basically panics for types that can’t actually be defaulted or something?</p>
+<p>We can fix the explicitness by making our signatures into Proper Generic Abominations:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">with_hasher</span> <span class="ident">hasher</span>: <span class="kw">impl</span> <span class="ident">Into</span><span class="op">&lt;</span><span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">S</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">default_hasher</span>) </code></pre></div>
+<p>So fun fact, everything implements <code>Into&lt;Option&lt;Self&gt;&gt;</code>, which, is not terribly surprising if you think about it, but, also horrifying (credit to Yaah for pointing this out, I’ve been out of the game for too long…). I believe this signature passes the default subset checking/wellformed rule I described before. It lets us elide Some for map3:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let</span> <span class="ident">map3</span> <span class="op">=</span> <span class="ident">HashMap::new</span>(<span class="ident">with_hasher</span>: <span class="ident">MySeededHasher::new</span>(<span class="number">0</span>));</code></pre></div>
+<p>Fixing the “must be Default” problem has two Really Fucking Hacky options that I can think of. The Chaotic Evil option is introducing a MaybeDefault trait that basically panics for types that can’t actually be defaulted:</p>
 
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">trait</span> <span class="ident">MaybeDefault</span> {
     <span class="kw">fn</span> <span class="ident">maybe_default</span>() -&gt; <span class="self">Self</span>;
@@ -510,7 +538,48 @@ doThing() </code></pre></div>
     <span class="kw">fn</span> <span class="ident">maybe_default</span> -&gt; <span class="self">Self</span> { <span class="macro">unreachable!</span>(<span class="string">&quot;get fucked&quot;</span>) }
 }</code></pre></div>
 <p>This is certainly Code That Can Be Written. Should it be written? Absolutely Not.</p>
-<h1 id="implementing-default-with-optional-args"><a href="#implementing-default-with-optional-args">10 Implementing Default With Optional Args</a></h1>
+<p>The Lawful Evil option is to accept reality: we are trying to smash 3 “choices” into one API, but defaults only give us 2 choices – default or not. If we want a 3rd choice, we need a second API… but what if it was the same API… But The Sequel?</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn</span> <span class="ident">hard_default_hasher</span>() -&gt; <span class="ident">RandomState</span> { <span class="ident">RandomState::new</span>() }
+<span class="kw">fn</span> <span class="ident">soft_default_hasher</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">BuildHasher</span> <span class="op">+</span> <span class="ident">Default</span><span class="op">&gt;</span>() -&gt; <span class="ident">S</span> { <span class="ident">S::default</span>() }
+
+<span class="kw">impl</span> <span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span>, <span class="ident">S</span>: <span class="ident">BuildHasher</span><span class="op">&gt;</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span>, <span class="ident">S</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">with_hasher</span> <span class="ident">hasher</span>: <span class="ident">S</span> <span class="op">=</span> <span class="ident">hard_default_hasher</span>) -&gt; <span class="self">Self</span> { ... }
+    <span class="kw">fn</span> <span class="ident">new2</span>(<span class="ident">with_hasher</span> <span class="ident">hasher</span>: <span class="ident">S</span> <span class="op">=</span> <span class="ident">soft_default_hasher</span>) -&gt; <span class="self">Self</span> { ... }
+}</code></pre></div>
+<p>Ok so this is weird but hear me out: this is basically letting people into the HashMap::default hack for each constructor. If you’re using HashMap::new, you are basically saying “I want to live in the world where this has only <code>&lt;K, V&gt;</code>” and you get the strict default of S=RandomState. If you use HashMap::new2, you are saying “I know the defaulted type param exists” and get the default of S:Default. So you can now do:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let</span> <span class="ident">map1</span> <span class="op">=</span> <span class="ident">HashMap::new</span>();
+<span class="comment">// NOTE: this one uses new2 now!</span>
+<span class="kw">let</span> <span class="ident">map2</span> <span class="op">=</span> <span class="ident">HashMap</span>::<span class="op">&lt;</span><span class="kw">_</span>, <span class="kw">_</span>, <span class="ident">MyHasher</span><span class="op">&gt;</span><span class="ident">::new2</span>();
+<span class="comment">// NOTE: can still use normal new for hardcoding!</span>
+<span class="kw">let</span> <span class="ident">map3</span> <span class="op">=</span> <span class="ident">HashMap::new</span>(<span class="ident">with_hasher</span>: <span class="ident">MySeededHasher::new</span>(<span class="number">0</span>));</code></pre></div>
+<p>And this solution “scales” to adding more parameters, by just… adding +1:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn</span> <span class="ident">hard_default_hasher</span>() -&gt; <span class="ident">RandomState</span> { <span class="ident">RandomState::new</span>() }
+<span class="kw">fn</span> <span class="ident">soft_default_hasher</span><span class="op">&lt;</span><span class="ident">S</span>: <span class="ident">BuildHasher</span> <span class="op">+</span> <span class="ident">Default</span><span class="op">&gt;</span>() -&gt; <span class="ident">S</span> { <span class="ident">S::default</span>() }
+<span class="kw">fn</span> <span class="ident">hard_default_alloc</span>() -&gt; <span class="ident">Global</span> { <span class="ident">Global</span> }
+<span class="kw">fn</span> <span class="ident">soft_default_alloc</span><span class="op">&lt;</span><span class="ident">A</span>: <span class="ident">Allocator</span> <span class="op">+</span> <span class="ident">Default</span><span class="op">&gt;</span>() -&gt; <span class="ident">A</span> { <span class="ident">A::default</span>() }
+
+<span class="kw">impl</span> <span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span>, <span class="ident">S</span>: <span class="ident">BuildHasher</span>, <span class="ident">A</span>: <span class="ident">Allocator</span><span class="op">&gt;</span> <span class="ident">HashMap</span><span class="op">&lt;</span><span class="ident">K</span>, <span class="ident">V</span>, <span class="ident">S</span>, <span class="ident">A</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(
+      <span class="ident">with_hasher</span> <span class="ident">hasher</span>: <span class="ident">S</span> <span class="op">=</span> <span class="ident">hard_default_hasher</span>
+      <span class="ident">with_alloc</span> <span class="ident">alloc</span>: <span class="ident">A</span> <span class="op">=</span> <span class="ident">hard_default_alloc</span>
+    ) -&gt; <span class="self">Self</span> { ... }
+    <span class="kw">fn</span> <span class="ident">new2</span>(
+      <span class="ident">with_hasher</span> <span class="ident">hasher</span>: <span class="ident">S</span> <span class="op">=</span> <span class="ident">soft_default_hasher</span>
+      <span class="ident">with_alloc</span> <span class="ident">alloc</span>: <span class="ident">A</span> <span class="op">=</span> <span class="ident">hard_default_alloc</span>
+    ) -&gt; <span class="self">Self</span> { ... }
+    <span class="kw">fn</span> <span class="ident">new3</span>(
+      <span class="ident">with_hasher</span> <span class="ident">hasher</span>: <span class="ident">S</span> <span class="op">=</span> <span class="ident">soft_default_hasher</span>
+      <span class="ident">with_alloc</span> <span class="ident">alloc</span>: <span class="ident">A</span> <span class="op">=</span> <span class="ident">soft_default_alloc</span>
+    ) -&gt; <span class="self">Self</span> { ... }
+}</code></pre></div>
+<p>Kind of like editions, using new2 or new3 is telling the compiler you “know” about the new parameter and are willing to take the inference problems, just like you do with Default.</p>
+<p>Now, this definitely sucks, and seems to be going down the combinatorics path, but it’s still significantly better: instead of <em>exponential</em> growth in our constructor APIs, we only get <em>linear</em> growth. Every time we add a new defaulted param, we get +1 to each of our “fundamental” constructors. Under the current system we double <em>all</em> of our constructors. And crucially, the plain <code>new</code> constructor still is able to handle the new stuff for explicit initialization, so it’s not “the old bad one”, it’s just “the strict default one”.</p>
+<p>Look I wouldn’t ship it either BUT… I have seen worse.</p>
+<p>This “solves” problems 1 and 2, but fails to put them in the same function, so it fails to solve problem 4 (Default). Let’s take a crack at that next.</p>
+<h1 id="implementing-default-with-optional-args"><a href="#implementing-default-with-optional-args">11 Implementing Default With Optional Args</a></h1>
 <p>At the top of this post, I mentioned how it sucks that Vec::default is fucked up by introducing new defaulted type parameters. Can we fix this?</p>
 <p>Not with my design! I initially thought you could maybe allow Extra Optional Arguments in trait impls because the compiler has to be able to generate the Proper One as a reabstraction thunk anyway… and I think that part is <em>plausible</em>, but it doesn’t actually solve the problem.</p>
 <p>You would end up with:</p>
@@ -524,14 +593,27 @@ doThing() </code></pre></div>
 }</code></pre></div>
 <p>Which… doesn’t actually do anything! Anyone who calls default() is just hardcoding the default, which is Global! You can’t make default_alloc generic over <code>A: Allocator</code>, because then you get HashMap::default’s need to be explicit and break everyone calling Vec::default(). Argh!</p>
 <p>I’ve got absolutely nothing on this one, it seems like it really truly needs Defaults Affect Inference. 😭</p>
-<h1 id="conclusion"><a href="#conclusion">11 Conclusion</a></h1>
+<p>…ok no wait I’ve got one hack left. </p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">Global</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">default</span>() -&gt; <span class="self">Self</span> { ... }
+}
+
+<span class="kw">impl</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">A</span>: <span class="ident">Default</span> <span class="op">+</span> <span class="ident">Allocator</span><span class="op">&gt;</span> <span class="ident">Default</span> <span class="kw">for</span> <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">T</span>, <span class="ident">A</span><span class="op">&gt;</span> {
+    <span class="kw">fn</span> <span class="ident">default</span>() -&gt; <span class="self">Self</span> { ... }
+}</code></pre></div>
+<p>Did you know that concrete impls get to shadow trait methods? This is a real thing we use sometimes, but for a different reason: if a core part of some type’s interface is actually the MyTrait interface, we can duplicate the API concretely so that it’s always available, even for code which doesn’t “know” about MyTrait (trait methods aren’t in scope unless the trait is, also this doesn’t duplicate any code since one impl just calls the other).</p>
+<p>So if you think about it, the nastiest breakage from making Default fully generic is that random concrete code trying to do Vec::default() may break. So what if we… just made Vec::default in concrete contexts… hardcode the defaults?</p>
+<p>Is this anything? Not really. MyTypedefedVec::default will now see the concrete impl and still not work. Code that’s <em>actually</em> using Default generically will probably still get some inference problems… maybe. Basically as things get more generic, the user is more likely to have to have some type ascriptions <em>anyway</em>, and then “proper” default type parameters kick in, and everything would work.</p>
+<p>It’s… interesting, but a bit too fuzzy for my tastes.</p>
+<h1 id="conclusion"><a href="#conclusion">12 Conclusion</a></h1>
 <p>Whelp, I failed!</p>
-<p>A lot of this stuff is really nice, and I would personally love to have it the language if only to tame the <em>combinatorics</em> of defaults a little bit. And for people who aren’t <em>explicitly</em> trying to solve the Allocator problem, this gives them a lot of great tools for building nice APIs.</p>
-<p>But I just don’t see how this can be done without proper type/inference changes. Maybe all of this stuff makes the hard cases trivial? That would be nice. </p>
+<p>A lot of this stuff is really nice, and I would personally love to have it in the language if only to tame the <em>combinatorics</em> of defaults a little bit. And for people who aren’t <em>explicitly</em> trying to solve the Allocator problem, this gives them a lot of great tools for building nice APIs.</p>
+<p>But I just don’t see how this can be done without proper typesystem/inference changes. Maybe all of this stuff makes the hard cases trivial? That would be nice. </p>
 <p>I didn’t talk to any compiler/lang people while writing this. I also didn’t talk to anyone on the allocators working group or really look over their notes. This is just a brain worm that has bugged me for almost a decade, and I was like, The Collections Person on the libs team, so I understand the problem space pretty well! </p>
 <p>This was mostly just an excuse to write out the problem in full and mess around with some cool ideas that were just FUN TO THINK ABOUT regardless of the practical details! If either of those groups has cracked the nut on Defaults Affect Inference without me noticing, then, holy shit! Amazing fucking work!!</p>
-<p>Also I mean… the hacky solution isn’t that bad? I wouldn’t have even pushed forward with allocators at all given the current situation, so clearly y’all are kinda ok with suffering!?</p>
-<p>Is it that bad..?</p>
+<p>Also I mean… the hacky solutions aren’t <em>that</em> bad? I wouldn’t have even pushed forward with allocators at all given the current situation, so clearly y’all are kinda ok with suffering!?</p>
+<p>Are the hacks that bad..?</p>
 
     </article>
 

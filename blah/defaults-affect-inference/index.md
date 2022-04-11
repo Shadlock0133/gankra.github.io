@@ -429,11 +429,11 @@ And now you can do this:
 
 ```rust
 let vec1 = Vec::new();
-let vec2 = Vec::<MyAllocator>::new();
+let vec2 = Vec::<_, MyAllocator>::new();
 let vec3 = Vec::new(in_alloc: &my_local_allocator);
 
 let map1 = HashMap::new();
-let map2 = HashMap::<MyHasher>::new();
+let map2 = HashMap::<_, _, MyHasher>::new();
 let map3 = HashMap::new(with_hasher: MySeededHasher::new(0));
 ```
 
@@ -444,7 +444,27 @@ I've skipped two things:
 * I didn't introduce the feature the Swift proposal was *actually* about, which was allowing optional argument expressions to not cover all possible types for the argument.
 * I made the defaults hardcode the default type parameter, but then just magically assumed `Vec::<MyAllocator>::new()` would work, which is nonsense.
 
-We're going to need to think a bit harder to make this work!
+We're going to need to think a bit harder to make this work! 
+
+
+
+
+# What I Want From A Solution
+
+The rest of this article will be trying to push closer to achieving this "fantasy", so just to spell out what I'm looking for:
+
+1. map1/vec1 is "fully defaulted", and what happens today. The user doesn't care about all the customization points of our collections and just gets the Good Defaults. No solution is allowed to break this.
+
+2. map2/vec2 is "implicitly using the Default trait", and what Defaults Affect Inference was always supposed to unlock. Here we're using the turbofish to indicate we don't want the defaulted type parameter, but the more common situation would be someone hardcoding their preferences with `type MyMap<K, V> = HashMap<K, V, MyChoice>`. In this case we want to unlock `MyMap::new()` Just Working.
+
+3. map3/vec3 is "fixing combinatorics" and "allowing non-Default impls". It would be nice if every time we introduce a new defaulted type parameter, we could make manually providing it an option for all the *existing* constructors. None of this `with_capacity_and_hasher_and_allocator` business which simply does not scale. Ideally APIs like `with_hasher` would become "legacy" (not worth deprecating, but morally deprecated).
+
+4. New type parameters should not be locked out of trait implementations. The canonical example of this is Default. HashMap got away with this because its defaulted type parameter was "always" there, and so anyone using HashMap::default has always had to deal with it being a little annoying. Vec doesn't get to do this because it's adding its parameter after the fact, and so making Default more generic would make a ton of existing code ambiguous.
+
+If you can solve problems 1 and 2 in one function then you have "solved" Defaults Affect Inference, and presumably have a viable solution for 4 as well. That said I can imagine there are solutions that abuse the *concreteness* of 1 and 2, and still fall over on 4. Problem 4 is absolutely the final boss of Defaults Affect Inference.
+
+Problem 3 is orthogonal to Defaults Affect Inference, but is a problem that comes hand-in-hand with the things that DAI is *for*. As far as I can tell, it can only ever be fixed with defaulted optional arguments *or* a straight-up builder for your type. While I like builders in general, the ergonomics isn't there for "everyday" types like collections.
+
 
 
 
@@ -638,7 +658,7 @@ Ok here's where things start getting hacky just to see what happens. What if we 
 fn default_hasher() -> Option<RandomState> { ... }
 
 impl <K, V, S: BuildHasher> HashMap<K, V, S> {
-    fn new(with_hasher hasher: Option<S> = default_hasher) 
+    fn new(with_hasher hasher: Option<S> = default_hasher) -> Self 
         where S: Default,
     {
         let hasher = hasher.unwrap_or_default();
@@ -652,8 +672,11 @@ That seems pretty pointless! But, now you can write this:
 ```rust
 // uses S=RandomState
 let map1 = HashMap::new();
-let map2 = HashMap::<MyHasher>::new(with_hasher: None);
+let map2 = HashMap::<_, _, MyHasher>::new(with_hasher: None);
 let map3 = HashMap::new(with_hasher: Some(MySeededHasher::new(0)));
+
+// OR:
+let map2 = HashMap::new(with_hasher: None::<MyHasher>);
 ```
 
 Basically, by adding an Option (or an enum equivalent to Option), the user can explicitly request a "partial application" of the default. In this way we can squeeze all 3 usecases into one function... kind of. The explicit map3 case takes two hits:
@@ -661,7 +684,19 @@ Basically, by adding an Option (or an enum equivalent to Option), the user can e
 * It is now *extra* explicit
 * It must now conform to Default *even though we're explicitly providing it*
 
-I don't know how to do better than this without true changes to the type system. But, hey, it's there as an option?  Ok actually if you want to get Really Fucking Hacky we could make a MaybeDefault trait that basically panics for types that can't actually be defaulted or something?
+We can fix the explicitness by making our signatures into Proper Generic Abominations:
+
+```rust
+fn new(with_hasher hasher: impl Into<Option<S>> = default_hasher) 
+``` 
+
+So fun fact, everything implements `Into<Option<Self>>`, which, is not terribly surprising if you think about it, but, also horrifying (credit to Yaah for pointing this out, I've been out of the game for too long...). I believe this signature passes the default subset checking/wellformed rule I described before. It lets us elide Some for map3:
+
+```rust
+let map3 = HashMap::new(with_hasher: MySeededHasher::new(0));
+```
+
+Fixing the "must be Default" problem has two Really Fucking Hacky options that I can think of. The Chaotic Evil option is introducing a MaybeDefault trait that basically panics for types that can't actually be defaulted:
 
 ```rust
 trait MaybeDefault {
@@ -678,6 +713,60 @@ impl MaybeDefault for MyUndefaultableType {
 ```
 
 This is certainly Code That Can Be Written. Should it be written? Absolutely Not.
+
+The Lawful Evil option is to accept reality: we are trying to smash 3 "choices" into one API, but defaults only give us 2 choices -- default or not. If we want a 3rd choice, we need a second API... but what if it was the same API... But The Sequel?
+
+```rust
+fn hard_default_hasher() -> RandomState { RandomState::new() }
+fn soft_default_hasher<S: BuildHasher + Default>() -> S { S::default() }
+
+impl <K, V, S: BuildHasher> HashMap<K, V, S> {
+    fn new(with_hasher hasher: S = hard_default_hasher) -> Self { ... }
+    fn new2(with_hasher hasher: S = soft_default_hasher) -> Self { ... }
+}
+```
+
+Ok so this is weird but hear me out: this is basically letting people into the HashMap::default hack for each constructor. If you're using HashMap::new, you are basically saying "I want to live in the world where this has only `<K, V>`" and you get the strict default of S=RandomState. If you use HashMap::new2, you are saying "I know the defaulted type param exists" and get the default of S:Default. So you can now do:
+
+```rust
+let map1 = HashMap::new();
+// NOTE: this one uses new2 now!
+let map2 = HashMap::<_, _, MyHasher>::new2();
+// NOTE: can still use normal new for hardcoding!
+let map3 = HashMap::new(with_hasher: MySeededHasher::new(0));
+```
+
+And this solution "scales" to adding more parameters, by just... adding +1:
+
+```rust
+fn hard_default_hasher() -> RandomState { RandomState::new() }
+fn soft_default_hasher<S: BuildHasher + Default>() -> S { S::default() }
+fn hard_default_alloc() -> Global { Global }
+fn soft_default_alloc<A: Allocator + Default>() -> A { A::default() }
+
+impl <K, V, S: BuildHasher, A: Allocator> HashMap<K, V, S, A> {
+    fn new(
+      with_hasher hasher: S = hard_default_hasher
+      with_alloc alloc: A = hard_default_alloc
+    ) -> Self { ... }
+    fn new2(
+      with_hasher hasher: S = soft_default_hasher
+      with_alloc alloc: A = hard_default_alloc
+    ) -> Self { ... }
+    fn new3(
+      with_hasher hasher: S = soft_default_hasher
+      with_alloc alloc: A = soft_default_alloc
+    ) -> Self { ... }
+}
+```
+
+Kind of like editions, using new2 or new3 is telling the compiler you "know" about the new parameter and are willing to take the inference problems, just like you do with Default.
+
+Now, this definitely sucks, and seems to be going down the combinatorics path, but it's still significantly better: instead of *exponential* growth in our constructor APIs, we only get *linear* growth. Every time we add a new defaulted param, we get +1 to each of our "fundamental" constructors. Under the current system we double *all* of our constructors. And crucially, the plain `new` constructor still is able to handle the new stuff for explicit initialization, so it's not "the old bad one", it's just "the strict default one".
+
+Look I wouldn't ship it either BUT... I have seen worse.
+
+This "solves" problems 1 and 2, but fails to put them in the same function, so it fails to solve problem 4 (Default). Let's take a crack at that next.
 
 
 
@@ -703,6 +792,26 @@ Which... doesn't actually do anything! Anyone who calls default() is just hardco
 
 I've got absolutely nothing on this one, it seems like it really truly needs Defaults Affect Inference. 😭
 
+...ok no wait I've got one hack left. 
+
+```rust
+impl<T> Vec<T, Global> {
+    fn default() -> Self { ... }
+}
+
+impl<T, A: Default + Allocator> Default for Vec<T, A> {
+    fn default() -> Self { ... }
+}
+```
+
+Did you know that concrete impls get to shadow trait methods? This is a real thing we use sometimes, but for a different reason: if a core part of some type's interface is actually the MyTrait interface, we can duplicate the API concretely so that it's always available, even for code which doesn't "know" about MyTrait (trait methods aren't in scope unless the trait is, also this doesn't duplicate any code since one impl just calls the other).
+
+So if you think about it, the nastiest breakage from making Default fully generic is that random concrete code trying to do Vec::default() may break. So what if we... just made Vec::default in concrete contexts... hardcode the defaults?
+
+Is this anything? Not really. MyTypedefedVec::default will now see the concrete impl and still not work. Code that's *actually* using Default generically will probably still get some inference problems... maybe. Basically as things get more generic, the user is more likely to have to have some type ascriptions *anyway*, and then "proper" default type parameters kick in, and everything would work.
+
+It's... interesting, but a bit too fuzzy for my tastes.
+
 
 
 
@@ -710,14 +819,14 @@ I've got absolutely nothing on this one, it seems like it really truly needs Def
 
 Whelp, I failed!
 
-A lot of this stuff is really nice, and I would personally love to have it the language if only to tame the *combinatorics* of defaults a little bit. And for people who aren't *explicitly* trying to solve the Allocator problem, this gives them a lot of great tools for building nice APIs.
+A lot of this stuff is really nice, and I would personally love to have it in the language if only to tame the *combinatorics* of defaults a little bit. And for people who aren't *explicitly* trying to solve the Allocator problem, this gives them a lot of great tools for building nice APIs.
 
-But I just don't see how this can be done without proper type/inference changes. Maybe all of this stuff makes the hard cases trivial? That would be nice. 
+But I just don't see how this can be done without proper typesystem/inference changes. Maybe all of this stuff makes the hard cases trivial? That would be nice. 
 
 I didn't talk to any compiler/lang people while writing this. I also didn't talk to anyone on the allocators working group or really look over their notes. This is just a brain worm that has bugged me for almost a decade, and I was like, The Collections Person on the libs team, so I understand the problem space pretty well! 
 
 This was mostly just an excuse to write out the problem in full and mess around with some cool ideas that were just FUN TO THINK ABOUT regardless of the practical details! If either of those groups has cracked the nut on Defaults Affect Inference without me noticing, then, holy shit! Amazing fucking work!!
 
-Also I mean... the hacky solution isn't that bad? I wouldn't have even pushed forward with allocators at all given the current situation, so clearly y'all are kinda ok with suffering!?
+Also I mean... the hacky solutions aren't *that* bad? I wouldn't have even pushed forward with allocators at all given the current situation, so clearly y'all are kinda ok with suffering!?
 
-Is it that bad..?
+Are the hacks that bad..?
