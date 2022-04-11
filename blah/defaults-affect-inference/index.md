@@ -713,9 +713,9 @@ A lot of this stuff is really nice, and I would personally love to have it the l
 
 But I just don't see how this can be done without proper type/inference changes. Maybe all of this stuff makes the hard cases trivial? That would be nice. 
 
-I didn't talk to any compiler/lang people while writing this. I also didn't talk to anyone on the allocators working group or really look over their notes. This is just a brain worm that has bugged me for almost a decade, and I was like, The Collections Person on the libs team, so I understand the problemspace pretty well! 
+I didn't talk to any compiler/lang people while writing this. I also didn't talk to anyone on the allocators working group or really look over their notes. This is just a brain worm that has bugged me for almost a decade, and I was like, The Collections Person on the libs team, so I understand the problem space pretty well! 
 
-This was mostly just an excuse to write out the problem in full and mess aorund with some cool ideas that were just FUN TO THINK ABOUT regardless of the practical details! If either of those groups has cracked the nut on Defaults Affect Inference without me noticing, then, holy shit! Amazing fucking work!!
+This was mostly just an excuse to write out the problem in full and mess around with some cool ideas that were just FUN TO THINK ABOUT regardless of the practical details! If either of those groups has cracked the nut on Defaults Affect Inference without me noticing, then, holy shit! Amazing fucking work!!
 
 Also I mean... the hacky solution isn't that bad? I wouldn't have even pushed forward with allocators at all given the current situation, so clearly y'all are kinda ok with suffering!?
 
