@@ -599,7 +599,7 @@ let vec2 = Vec::new(in_alloc: MyAllocator::default());
 let vec3 = Vec::new(in_alloc: &my_local_allocator);
 
 let map1 = HashMap::new();
-let map2 = HashMap::new(in_alloc: MyHasher::default());
+let map2 = HashMap::new(with_hasher: MyHasher::default());
 let map3 = HashMap::new(with_hasher: MySeededHasher::new(0));
 ```
 
