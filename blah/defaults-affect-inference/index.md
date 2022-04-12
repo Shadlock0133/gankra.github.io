@@ -442,7 +442,7 @@ Wow! Perfect! Incredible! Complete Bullshit That Doesn't Work!
 I've skipped two things:
 
 * I didn't introduce the feature the Swift proposal was *actually* about, which was allowing optional argument expressions to not cover all possible types for the argument.
-* I made the defaults hardcode the default type parameter, but then just magically assumed `Vec::<MyAllocator>::new()` would work, which is nonsense.
+* I made the defaults hardcode the default type parameter, but then just magically assumed `Vec::<_, MyAllocator>::new()` would work, which is nonsense.
 
 We're going to need to think a bit harder to make this work! 
 
