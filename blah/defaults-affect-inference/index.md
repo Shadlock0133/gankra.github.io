@@ -279,10 +279,10 @@ How would we "steal" this for Rust?
 
 Well we can't have the same default for backcompat, but external args are pretty common when you want to do this, so let's take a simple approach:
 
-```swift
-func ditto(arg arg: String) { println!("{arg}") }
-func external(withArg arg: String) { println!("{arg}") }
-func unnamed(arg: String) { println!("{arg}") }
+```rust
+fn ditto(arg arg: String) { println!("{arg}") }
+fn external(withArg arg: String) { println!("{arg}") }
+fn unnamed(arg: String) { println!("{arg}") }
 
 ditto(arg: "hello")
 external(withArg: "there")
